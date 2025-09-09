@@ -1,4 +1,5 @@
 import { validateNumber } from "@ccflare/core";
+import { PersonalModeIntegration } from "@ccflare/personal-mode-monitor";
 import {
 	createAccountAddHandler,
 	createAccountPauseHandler,
@@ -46,10 +47,18 @@ export class APIRouter {
 		string,
 		(req: Request, url: URL) => Response | Promise<Response>
 	>;
+	private personalModeIntegration: PersonalModeIntegration;
 
 	constructor(context: APIContext) {
 		this.context = context;
 		this.handlers = new Map();
+
+		// Initialize personal mode integration
+		this.personalModeIntegration = new PersonalModeIntegration(
+			context.dbOps,
+			true,
+		);
+
 		this.registerHandlers();
 	}
 
@@ -148,6 +157,26 @@ export class APIRouter {
 			return bulkHandler(req);
 		});
 		this.handlers.set("GET:/api/workspaces", () => workspacesHandler());
+
+		// Personal mode endpoints
+		const personalModeMonitor = this.personalModeIntegration.getMonitor();
+		if (personalModeMonitor) {
+			const {
+				createPersonalModeHandlers,
+			} = require("@ccflare/personal-mode-monitor");
+			const personalHandlers = createPersonalModeHandlers(personalModeMonitor);
+
+			// Register personal mode routes
+			this.handlers.set("GET:/api/personal/sessions", (_req, url) =>
+				personalHandlers.getActiveSessions(url.searchParams),
+			);
+			this.handlers.set("GET:/api/personal/metrics", () =>
+				personalHandlers.getPersonalModeMetrics(),
+			);
+			this.handlers.set("POST:/api/personal/cleanup", () =>
+				personalHandlers.triggerCleanup(),
+			);
+		}
 	}
 
 	/**
@@ -256,7 +285,52 @@ export class APIRouter {
 			}
 		}
 
+		// Check for dynamic personal mode endpoints
+		if (path.startsWith("/api/personal/")) {
+			const personalModeMonitor = this.personalModeIntegration.getMonitor();
+			if (personalModeMonitor) {
+				const {
+					createPersonalModeHandlers,
+				} = require("@ccflare/personal-mode-monitor");
+				const personalHandlers =
+					createPersonalModeHandlers(personalModeMonitor);
+
+				const parts = path.split("/");
+
+				// GET /api/personal/analytics/:userId
+				if (parts[3] === "analytics" && parts[4] && method === "GET") {
+					const userId = parts[4];
+					return await this.wrapHandler(() =>
+						personalHandlers.getPersonalAnalytics(userId, url.searchParams),
+					)(req, url);
+				}
+
+				// GET /api/personal/quota/:userId
+				if (parts[3] === "quota" && parts[4] && method === "GET") {
+					const userId = parts[4];
+					return await this.wrapHandler(() =>
+						personalHandlers.getQuotaStatus(userId),
+					)(req, url);
+				}
+
+				// POST /api/personal/quota/:userId
+				if (parts[3] === "quota" && parts[4] && method === "POST") {
+					const userId = parts[4];
+					return await this.wrapHandler((req) =>
+						personalHandlers.setPersonalQuota(userId, req),
+					)(req, url);
+				}
+			}
+		}
+
 		// No matching route
 		return null;
+	}
+
+	/**
+	 * Get the personal mode integration instance
+	 */
+	public getPersonalModeIntegration(): PersonalModeIntegration {
+		return this.personalModeIntegration;
 	}
 }

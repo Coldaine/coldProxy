@@ -156,6 +156,9 @@ export default function startServer(options?: {
 
 	const apiRouter = new APIRouter({ db, config, dbOps });
 
+	// Get personal mode integration from API router
+	const personalModeIntegration = apiRouter.getPersonalModeIntegration();
+
 	// Run startup maintenance once (cleanup + compact)
 	stopRetentionJob = runStartupMaintenance(config, dbOps);
 
@@ -249,7 +252,47 @@ export default function startServer(options?: {
 			}
 
 			// All other paths go to proxy
-			return handleProxy(req, url, proxyContext);
+			// Hook into personal mode before proxying
+			if (personalModeIntegration.isEnabled()) {
+				try {
+					// Extract proxy request information for personal mode
+					const proxyRequest = {
+						method: req.method,
+						path: url.pathname,
+						headers: req.headers,
+						body: null, // Will be populated by handleProxy
+						query: url.search,
+					};
+
+					await personalModeIntegration.onProxyRequest(req, proxyRequest);
+				} catch (error) {
+					log.error("Personal mode pre-proxy error:", error);
+				}
+			}
+
+			const response = await handleProxy(req, url, proxyContext);
+
+			// Hook into personal mode after proxying
+			if (personalModeIntegration.isEnabled()) {
+				try {
+					const proxyResponse = {
+						status: response.status,
+						statusText: response.statusText,
+						headers: response.headers,
+						body: null, // Stream handling would be complex here
+					};
+
+					await personalModeIntegration.onProxyResponse(
+						req,
+						response,
+						proxyResponse,
+					);
+				} catch (error) {
+					log.error("Personal mode post-proxy error:", error);
+				}
+			}
+
+			return response;
 		},
 	});
 
