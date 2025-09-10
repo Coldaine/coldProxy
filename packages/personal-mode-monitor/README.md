@@ -9,10 +9,11 @@ The Personal Mode LLM Monitor provides enhanced tracking and analytics capabilit
 ## Features
 
 ### 🔒 Privacy-First Design
-- Configurable data retention (default: 7 days)
+- Configurable data retention (default: 7 days, set to -1 for permanent retention)
 - Content anonymization for sensitive data
 - Minimal data collection approach
 - User-controlled data storage
+- Optional session cleanup (set sessionTimeoutMs to -1 to disable)
 
 ### 📊 Personal Analytics
 - Conversation-based interaction tracking
@@ -33,6 +34,25 @@ The Personal Mode LLM Monitor provides enhanced tracking and analytics capabilit
 - Multi-turn conversation tracking
 - Session timeout management
 - Active session monitoring
+
+## Configuration for Permanent Data Retention
+
+To keep all session data forever (disable automatic cleanup):
+
+```typescript
+const monitor = new PersonalModeLLMMonitor(dbOps, {
+    dataRetentionDays: -1,        // Disable database cleanup
+    sessionTimeoutMs: -1,         // Disable session cleanup
+    enableAnonymization: false,   // Optional: disable anonymization
+    personalQuotaEnabled: false,  // Optional: disable quotas
+});
+```
+
+**Configuration Options:**
+- `dataRetentionDays: -1` - Never delete database records
+- `sessionTimeoutMs: -1` - Never remove sessions from memory
+- `enableAnonymization: false` - Store raw content (less privacy)
+- `personalQuotaEnabled: false` - Disable quota tracking
 
 ## API Endpoints
 

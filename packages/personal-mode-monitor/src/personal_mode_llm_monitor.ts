@@ -20,6 +20,11 @@ export class PersonalModeLLMMonitor extends EventEmitter {
 	private readonly quotas = new Map<string, PersonalQuota>();
 	private readonly config: PersonalModeConfig;
 
+	// EventEmitter methods
+	emit(event: string, ...args: any[]): boolean {
+		return super.emit(event, ...args);
+	}
+
 	constructor(dbOps: DatabaseOperations, config: PersonalModeConfig = {}) {
 		super();
 		this.log = new Logger("PersonalModeLLMMonitor");
@@ -33,7 +38,10 @@ export class PersonalModeLLMMonitor extends EventEmitter {
 			...config,
 		};
 
-		this.initializeCleanupTimer();
+		// Only initialize cleanup timer if retention is not disabled
+		if (this.config.dataRetentionDays !== -1) {
+			this.initializeCleanupTimer();
+		}
 		this.log.info("Personal Mode LLM Monitor initialized");
 	}
 
@@ -213,6 +221,12 @@ export class PersonalModeLLMMonitor extends EventEmitter {
 	 * Clean up old data and expired sessions
 	 */
 	public cleanup(): void {
+		// Skip cleanup if retention is disabled (-1)
+		if (this.config.dataRetentionDays === -1) {
+			this.log.info("Data retention disabled - skipping cleanup");
+			return;
+		}
+
 		const cutoffTime =
 			Date.now() - (this.config.dataRetentionDays || 7) * 24 * 60 * 60 * 1000;
 		const sessionTimeout =
@@ -232,16 +246,18 @@ export class PersonalModeLLMMonitor extends EventEmitter {
 				`Cleaned up ${deletedRows.changes} old personal interactions`,
 			);
 
-			// Clean up expired sessions
-			let expiredSessions = 0;
-			for (const [sessionId, session] of this.sessions) {
-				if (session.lastActivity < sessionTimeout) {
-					this.sessions.delete(sessionId);
-					expiredSessions++;
+			// Clean up expired sessions (skip if session timeout is disabled)
+			if (this.config.sessionTimeoutMs !== -1) {
+				let expiredSessions = 0;
+				for (const [sessionId, session] of this.sessions) {
+					if (session.lastActivity < sessionTimeout) {
+						this.sessions.delete(sessionId);
+						expiredSessions++;
+					}
 				}
-			}
 
-			this.log.info(`Cleaned up ${expiredSessions} expired sessions`);
+				this.log.info(`Cleaned up ${expiredSessions} expired sessions`);
+			}
 
 			// Reset quotas if needed
 			const now = Date.now();
@@ -402,11 +418,11 @@ export class PersonalModeLLMMonitor extends EventEmitter {
 
 // Types and interfaces
 export interface PersonalModeConfig {
-	dataRetentionDays?: number;
-	maxConversationLength?: number;
-	enableAnonymization?: boolean;
-	personalQuotaEnabled?: boolean;
-	sessionTimeoutMs?: number;
+	dataRetentionDays?: number;      // Days to keep data (set to -1 to disable cleanup)
+	maxConversationLength?: number;  // Limit content length for privacy
+	enableAnonymization?: boolean;   // Enable content anonymization
+	personalQuotaEnabled?: boolean;  // Enable quota tracking
+	sessionTimeoutMs?: number;       // Session timeout in ms (set to -1 to disable)
 }
 
 export interface PersonalInteraction {
