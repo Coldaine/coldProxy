@@ -12,3 +12,15 @@ export { analyzeIndexUsage } from "./performance-indexes";
 
 // Re-export repository types
 export type { StatsRepository } from "./repositories/stats.repository";
+export type {
+	KeyStoreRepository,
+	KeyStoreItem,
+} from "./repositories/key-store.repository";
+export type {
+	InteractionRepository,
+	Interaction,
+} from "./repositories/interaction.repository";
+export type {
+	CipherBlobRepository,
+	CipherBlob,
+} from "./repositories/cipher-blob.repository";

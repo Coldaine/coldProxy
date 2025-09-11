@@ -9,16 +9,39 @@ export class AsyncDbWriter implements Disposable {
 	private queue: DbJob[] = [];
 	private running = false;
 	private intervalId: Timer | null = null;
+	private maxQueueSize: number;
+	private warnThreshold: number;
 
-	constructor() {
+	// Metrics
+	public queueDepth = 0;
+	public droppedJobs = 0;
+	public totalJobs = 0;
+
+	constructor(maxQueueSize = 1000) {
+		this.maxQueueSize = maxQueueSize;
+		this.warnThreshold = maxQueueSize * 0.8;
 		// Process queue every 100ms
 		this.intervalId = setInterval(() => void this.processQueue(), 100);
 	}
 
-	enqueue(job: DbJob): void {
+	enqueue(job: DbJob): boolean {
+		this.totalJobs++;
+		this.queueDepth = this.queue.length;
+
+		if (this.queueDepth >= this.maxQueueSize) {
+			this.droppedJobs++;
+			logger.error("DB queue overflow. Dropping job.");
+			return false; // Signal that the job was dropped
+		}
+
+		if (this.queueDepth >= this.warnThreshold) {
+			logger.warn(`DB queue approaching capacity. Depth: ${this.queueDepth}`);
+		}
+
 		this.queue.push(job);
 		// Immediately try to process if not already running
 		void this.processQueue();
+		return true;
 	}
 
 	private async processQueue(): Promise<void> {

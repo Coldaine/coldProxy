@@ -22,10 +22,12 @@ export function jsonResponse(
  */
 export function errorResponse(error: unknown): Response {
 	if (error instanceof HttpError) {
-		const body: { error: string; details?: unknown } = {
+		const body: { error: string; errorId: string; details?: unknown } = {
 			error: error.message,
+			errorId: error.errorId,
 		};
-		if (error.details !== undefined) {
+		// Only include details in non-production environments for security
+		if (process.env.NODE_ENV !== "production" && error.details !== undefined) {
 			body.details = error.details;
 		}
 		return jsonResponse(body, error.status);
@@ -42,7 +44,10 @@ export function errorResponse(error: unknown): Response {
 		console.error("Unhandled error:", error);
 	}
 
-	return jsonResponse({ error: message }, status);
+	return jsonResponse(
+		{ error: message, errorId: "internal_server_error" },
+		status,
+	);
 }
 
 /**

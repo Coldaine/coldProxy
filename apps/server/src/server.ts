@@ -9,6 +9,9 @@ import {
 	setPricingLogger,
 	shutdown,
 	TIME_CONSTANTS,
+	CryptoService,
+	UnlockService,
+	SetupService,
 } from "@ccflare/core";
 import { container, SERVICE_KEYS } from "@ccflare/core-di";
 // Import React dashboard assets
@@ -144,6 +147,16 @@ export default function startServer(options?: {
 	const log = container.resolve<Logger>(SERVICE_KEYS.Logger);
 	container.registerInstance(SERVICE_KEYS.Database, dbOps);
 
+	// Startup checks
+	const mode = config.getMode();
+	if (mode === "personal") {
+		if (!dbOps.getKeyStoreRepository().hasMasterKey()) {
+			throw new Error(
+				"Master key not initialized. Please run the setup process.",
+			);
+		}
+	}
+
 	// Initialize async DB writer
 	const asyncWriter = new AsyncDbWriter();
 	container.registerInstance(SERVICE_KEYS.AsyncWriter, asyncWriter);
@@ -154,7 +167,17 @@ export default function startServer(options?: {
 	container.registerInstance(SERVICE_KEYS.PricingLogger, pricingLogger);
 	setPricingLogger(pricingLogger);
 
-	const apiRouter = new APIRouter({ db, config, dbOps });
+	const cryptoService = new CryptoService();
+	const unlockService = new UnlockService(dbOps, cryptoService);
+	const setupService = new SetupService(dbOps, cryptoService);
+	const apiRouter = new APIRouter({
+		db,
+		config,
+		dbOps,
+		unlockService,
+		setupService,
+		logger: log,
+	});
 
 	// Get personal mode integration from API router
 	const personalModeIntegration = apiRouter.getPersonalModeIntegration();
@@ -197,10 +220,13 @@ export default function startServer(options?: {
 		strategy,
 		dbOps,
 		runtime: runtimeConfig,
+		config,
 		provider,
 		refreshInFlight: new Map(),
 		asyncWriter,
 		usageWorker: getUsageWorker(),
+		unlockService,
+		cryptoService,
 	};
 
 	// Hot reload strategy configuration

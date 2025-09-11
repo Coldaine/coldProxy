@@ -32,6 +32,9 @@ export interface ConfigData {
 	default_agent_model?: string;
 	data_retention_days?: number;
 	request_retention_days?: number;
+	kill_switch?: boolean;
+	mode?: "personal" | "standard";
+	use_new_encryption?: boolean;
 	[key: string]: string | number | boolean | undefined;
 }
 
@@ -179,6 +182,34 @@ export class Config extends EventEmitter {
 	setRequestRetentionDays(days: number): void {
 		const clamped = this.clamp(days, 1, 3650);
 		this.set("request_retention_days", clamped);
+	}
+
+	getKillSwitch(): boolean {
+		return this.get("kill_switch", false) as boolean;
+	}
+
+	setKillSwitch(enabled: boolean): void {
+		this.set("kill_switch", enabled);
+	}
+
+	getMode(): "personal" | "standard" {
+		const mode = process.env.COLDPROXY_MODE || this.get("mode");
+		if (mode === "personal") {
+			return "personal";
+		}
+		return "standard";
+	}
+
+	setMode(mode: "personal" | "standard"): void {
+		this.set("mode", mode);
+	}
+
+	useNewEncryption(): boolean {
+		return this.get("use_new_encryption", false) as boolean;
+	}
+
+	setUseNewEncryption(enabled: boolean): void {
+		this.set("use_new_encryption", enabled);
 	}
 
 	getAllSettings(): Record<string, string | number | boolean | undefined> {

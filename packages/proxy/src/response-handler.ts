@@ -33,6 +33,10 @@ export interface ResponseHandlerOptions {
 	retryAttempt: number;
 	failoverAttempts: number;
 	agentUsed?: string | null;
+	sk?: ArrayBuffer;
+	keyNonce?: Uint8Array;
+	keyVersion?: number;
+	userId?: string;
 }
 
 /**
@@ -56,6 +60,10 @@ export async function forwardToClient(
 		retryAttempt, // Always 0 in new flow, but kept for message compatibility
 		failoverAttempts,
 		agentUsed,
+		sk,
+		keyNonce,
+		keyVersion,
+		userId,
 	} = options;
 
 	// Always strip compression headers *before* we do anything else
@@ -88,8 +96,12 @@ export async function forwardToClient(
 		agentUsed: agentUsed || null,
 		retryAttempt,
 		failoverAttempts,
+		sk,
+		keyNonce,
+		keyVersion,
+		userId,
 	};
-	ctx.usageWorker.postMessage(startMessage);
+	ctx.usageWorker.postMessage(startMessage, sk ? [sk] : []);
 
 	// Emit request start event for real-time dashboard
 	requestEvents.emit("event", {

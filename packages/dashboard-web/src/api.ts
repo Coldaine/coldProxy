@@ -327,6 +327,26 @@ class API extends HttpClient {
 	async compactDb(): Promise<{ ok: boolean }> {
 		return this.post<{ ok: boolean }>("/api/maintenance/compact");
 	}
+
+	async unlockWithPin(
+		userId: string,
+		pin: string,
+	): Promise<{ success: boolean }> {
+		return this.post("/unlock/pin", { userId, pin });
+	}
+
+	async getWebAuthnChallenge(
+		userId: string,
+	): Promise<{ options: any; challenge: string }> {
+		return this.post("/unlock/webauthn/challenge", { userId });
+	}
+
+	async unlockWithWebAuthn(
+		userId: string,
+		assertionResponse: any,
+	): Promise<{ success: boolean }> {
+		return this.post("/unlock/webauthn/finish", { userId, assertionResponse });
+	}
 }
 
 export const api = new API();

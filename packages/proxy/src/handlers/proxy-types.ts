@@ -1,4 +1,5 @@
-import type { RuntimeConfig } from "@ccflare/config";
+import type { Config, RuntimeConfig } from "@ccflare/config";
+import type { CryptoService, UnlockService } from "@ccflare/core";
 import type { AsyncDbWriter, DatabaseOperations } from "@ccflare/database";
 import type { Provider } from "@ccflare/providers";
 import type { LoadBalancingStrategy } from "@ccflare/types";
@@ -7,10 +8,13 @@ export interface ProxyContext {
 	strategy: LoadBalancingStrategy;
 	dbOps: DatabaseOperations;
 	runtime: RuntimeConfig;
+	config: Config;
 	provider: Provider;
 	refreshInFlight: Map<string, Promise<string>>;
 	asyncWriter: AsyncDbWriter;
 	usageWorker: Worker;
+	unlockService: UnlockService;
+	cryptoService: CryptoService;
 }
 
 /** Error messages used throughout the proxy module */
