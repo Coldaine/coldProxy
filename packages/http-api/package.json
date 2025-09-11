@@ -16,6 +16,8 @@
 		"@ccflare/config": "workspace:*",
 		"@ccflare/oauth-flow": "workspace:*",
 		"@ccflare/providers": "workspace:*",
-		"@ccflare/types": "workspace:*"
+		"@ccflare/types": "workspace:*",
+		"@simplewebauthn/server": "^10.0.0",
+		"zod": "^3.23.8"
 	}
 }

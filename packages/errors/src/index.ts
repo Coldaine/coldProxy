@@ -25,6 +25,7 @@ export class HttpError extends Error {
 	constructor(
 		public status: number,
 		message: string,
+		public errorId: string,
 		public details?: unknown,
 	) {
 		super(message);
@@ -34,37 +35,37 @@ export class HttpError extends Error {
 
 // Common HTTP error factories
 export const BadRequest = (message: string, details?: unknown) =>
-	new HttpError(400, message, details);
+	new HttpError(400, message, "invalid_request", details);
 
 export const Unauthorized = (message: string, details?: unknown) =>
-	new HttpError(401, message, details);
+	new HttpError(401, message, "unauthorized", details);
 
 export const Forbidden = (message: string, details?: unknown) =>
-	new HttpError(403, message, details);
+	new HttpError(403, message, "forbidden", details);
 
 export const NotFound = (message: string, details?: unknown) =>
-	new HttpError(404, message, details);
+	new HttpError(404, message, "not_found", details);
 
 export const Conflict = (message: string, details?: unknown) =>
-	new HttpError(409, message, details);
+	new HttpError(409, message, "conflict", details);
 
 export const UnprocessableEntity = (message: string, details?: unknown) =>
-	new HttpError(422, message, details);
+	new HttpError(422, message, "unprocessable_entity", details);
 
 export const TooManyRequests = (message: string, details?: unknown) =>
-	new HttpError(429, message, details);
+	new HttpError(429, message, "too_many_requests", details);
 
 export const InternalServerError = (message: string, details?: unknown) =>
-	new HttpError(500, message, details);
+	new HttpError(500, message, "internal_server_error", details);
 
 export const BadGateway = (message: string, details?: unknown) =>
-	new HttpError(502, message, details);
+	new HttpError(502, message, "bad_gateway", details);
 
 export const ServiceUnavailable = (message: string, details?: unknown) =>
-	new HttpError(503, message, details);
+	new HttpError(503, message, "service_unavailable", details);
 
 export const GatewayTimeout = (message: string, details?: unknown) =>
-	new HttpError(504, message, details);
+	new HttpError(504, message, "gateway_timeout", details);
 
 // Error type detection
 export function getErrorType(error: unknown): ErrorType {
@@ -220,6 +221,7 @@ export function formatError(
 export async function parseHttpError(response: Response): Promise<HttpError> {
 	let message = `HTTP ${response.status}: ${response.statusText}`;
 	let details: unknown;
+	let errorId = "unknown_error";
 
 	try {
 		const contentType = response.headers.get("content-type");
@@ -231,9 +233,15 @@ export async function parseHttpError(response: Response): Promise<HttpError> {
 						? data.error
 						: data.error.message || message;
 				details = data.error;
+				if (typeof data.error === "object" && data.error.errorId) {
+					errorId = data.error.errorId;
+				}
 			} else if (data.message) {
 				message = data.message;
 				details = data;
+				if (data.errorId) {
+					errorId = data.errorId;
+				}
 			}
 		} else {
 			const text = await response.text();
@@ -245,5 +253,5 @@ export async function parseHttpError(response: Response): Promise<HttpError> {
 		// Ignore parsing errors
 	}
 
-	return new HttpError(response.status, message, details);
+	return new HttpError(response.status, message, errorId, details);
 }

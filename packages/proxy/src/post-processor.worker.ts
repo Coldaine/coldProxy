@@ -1,7 +1,17 @@
 declare var self: Worker;
 
-import { BUFFER_SIZES, estimateCostUSD, TIME_CONSTANTS } from "@ccflare/core";
-import { AsyncDbWriter, DatabaseOperations } from "@ccflare/database";
+import {
+	BUFFER_SIZES,
+	estimateCostUSD,
+	TIME_CONSTANTS,
+	CryptoService,
+} from "@ccflare/core";
+import {
+	AsyncDbWriter,
+	DatabaseOperations,
+	type Interaction,
+	type CipherBlob,
+} from "@ccflare/database";
 import { Logger } from "@ccflare/logger";
 import {
 	NO_ACCOUNT_ID,
@@ -49,9 +59,10 @@ const requests = new Map<string, RequestState>();
 // Initialize tiktoken encoder (cl100k_base is used for Claude models)
 const tokenEncoder = get_encoding("cl100k_base");
 
-// Initialize database connection for worker
+// Initialize services for worker
 const dbOps = new DatabaseOperations();
 const asyncWriter = new AsyncDbWriter();
+const cryptoService = new CryptoService();
 
 // Environment variables
 const MAX_BUFFER_SIZE =
@@ -461,9 +472,79 @@ async function handleEnd(msg: EndMessage): Promise<void> {
 		},
 	};
 
-	asyncWriter.enqueue(() =>
-		dbOps.saveRequestPayload(startMessage.requestId, payload),
-	);
+	if (
+		startMessage.sk &&
+		startMessage.userId &&
+		startMessage.keyVersion &&
+		startMessage.keyNonce
+	) {
+		// New encryption path
+		const sk = new Uint8Array(startMessage.sk);
+		const contentBuffer = combineChunks(state.chunks);
+
+		const interactionRepo = dbOps.getInteractionRepository();
+		const blobRepo = dbOps.getCipherBlobRepository();
+
+		const interaction: Interaction = {
+			id: startMessage.requestId,
+			user_id: startMessage.userId,
+			created_at: startMessage.timestamp,
+			model: state.usage.model || null,
+			tokens: state.usage.totalTokens || null,
+			cost_usd: state.usage.costUsd || null,
+			cipher_key_version: startMessage.keyVersion,
+			request_fingerprint: null, // TODO: calculate from request body
+			chunk_count: 0,
+			byte_count: contentBuffer.length,
+			truncated: false, // TODO: determine from response
+		};
+
+		const chunkSize = 1024 * 1024; // 1MB
+		const chunks: CipherBlob[] = [];
+		let offset = 0;
+		let chunkIndex = 0;
+
+		while (offset < contentBuffer.length) {
+			const chunk = contentBuffer.subarray(offset, offset + chunkSize);
+			offset += chunkSize;
+
+			const nonce = cryptoService.generateKey(24);
+			const aad = JSON.stringify({
+				userId: startMessage.userId,
+				keyVersion: startMessage.keyVersion,
+				chunkIndex,
+			});
+			const ciphertext = cryptoService.aeadEncrypt(chunk, nonce, sk, aad);
+
+			chunks.push({
+				id: `${startMessage.requestId}_${chunkIndex}`,
+				interaction_id: startMessage.requestId,
+				chunk_index: chunkIndex,
+				nonce: Buffer.from(nonce).toString("hex"),
+				ciphertext: Buffer.from(ciphertext),
+			});
+
+			chunkIndex++;
+		}
+		interaction.chunk_count = chunks.length;
+
+		asyncWriter.enqueue(() => {
+			dbOps.getDatabase().transaction(() => {
+				interactionRepo.create(interaction);
+				for (const chunk of chunks) {
+					blobRepo.create(chunk);
+				}
+			})();
+		});
+
+		// Zeroize the key
+		sk.fill(0);
+	} else {
+		// Old plaintext path
+		asyncWriter.enqueue(() =>
+			dbOps.saveRequestPayload(startMessage.requestId, payload),
+		);
+	}
 
 	// Log if we have usage
 	if (state.usage.model && startMessage.accountId !== NO_ACCOUNT_ID) {

@@ -126,6 +126,23 @@ export async function proxyWithAccount(
 			return null; // Signal to try next account
 		}
 
+		const { unlockService, cryptoService, config } = ctx;
+		let sk: ArrayBuffer | undefined;
+		let keyNonce: Uint8Array | undefined;
+		let keyVersion: number | undefined;
+		let userId: string | undefined;
+
+		if (config.getMode() === "personal" && config.useNewEncryption()) {
+			userId = req.headers.get("x-user-id") || "anonymous";
+			const dek = unlockService.getDecryptedDek(userId);
+			if (dek) {
+				keyNonce = cryptoService.generateKey(24);
+				const derivedKey = cryptoService.deriveInteractionKey(dek, keyNonce);
+				sk = derivedKey.buffer;
+				keyVersion = 1; // TODO: Get this from user state
+			}
+		}
+
 		// Forward response to client
 		return forwardToClient(
 			{
@@ -140,6 +157,10 @@ export async function proxyWithAccount(
 				retryAttempt: 0,
 				failoverAttempts,
 				agentUsed: requestMeta.agentUsed,
+				sk,
+				keyNonce,
+				keyVersion,
+				userId,
 			},
 			ctx,
 		);

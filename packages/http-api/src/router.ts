@@ -35,8 +35,26 @@ import {
 } from "./handlers/requests";
 import { createRequestsStreamHandler } from "./handlers/requests-stream";
 import { createStatsHandler, createStatsResetHandler } from "./handlers/stats";
+import {
+	createUnlockPinHandler,
+	createWebAuthnChallengeHandler,
+	createWebAuthnFinishHandler,
+} from "./handlers/unlock";
+import { createSetKillSwitchHandler } from "./handlers/admin";
+import {
+	createDecryptHandler,
+	createExportHandler,
+	createRotateKeyHandler,
+} from "./handlers/decrypt";
+import {
+	RateLimiter,
+	createRateLimitMiddleware,
+} from "./middleware/rate-limiter";
+import { requireFreshWebAuthn } from "./middleware/auth";
+import { createKillSwitchMiddleware } from "./middleware/kill-switch";
+import { createRequestIdMiddleware } from "./middleware/request-id";
 import type { APIContext } from "./types";
-import { errorResponse } from "./utils/http-error";
+import { errorResponse, HttpError } from "./utils/http-error";
 
 /**
  * API Router that handles all API endpoints
@@ -48,6 +66,8 @@ export class APIRouter {
 		(req: Request, url: URL) => Response | Promise<Response>
 	>;
 	private personalModeIntegration: PersonalModeIntegration;
+	private unlockRateLimiter: RateLimiter;
+	private exportRateLimiter: RateLimiter;
 
 	constructor(context: APIContext) {
 		this.context = context;
@@ -58,6 +78,15 @@ export class APIRouter {
 			context.dbOps,
 			true,
 		);
+
+		this.unlockRateLimiter = new RateLimiter({
+			maxRequests: 5,
+			windowMs: 60000,
+		}); // 5 requests per minute
+		this.exportRateLimiter = new RateLimiter({
+			maxRequests: 2,
+			windowMs: 60000,
+		}); // 2 requests per minute
 
 		this.registerHandlers();
 	}
@@ -86,6 +115,21 @@ export class APIRouter {
 		const requestsStreamHandler = createRequestsStreamHandler();
 		const cleanupHandler = createCleanupHandler(dbOps, config);
 		const compactHandler = createCompactHandler(dbOps);
+		const unlockPinHandler = createUnlockPinHandler(this.context);
+		const webauthnChallengeHandler =
+			createWebAuthnChallengeHandler(this.context);
+		const webauthnFinishHandler = createWebAuthnFinishHandler(this.context);
+		const setKillSwitchHandler = createSetKillSwitchHandler(this.context);
+		const exportHandler = createExportHandler(this.context);
+		const rotateKeyHandler = createRotateKeyHandler(this.context);
+		const decryptHandler = createDecryptHandler(this.context);
+		const withUnlockRateLimit = createRateLimitMiddleware(
+			this.unlockRateLimiter,
+		);
+		const withExportRateLimit = createRateLimitMiddleware(
+			this.exportRateLimiter,
+		);
+		const withKillSwitch = createKillSwitchMiddleware(this.context);
 
 		// Register routes
 		this.handlers.set("GET:/health", () => healthHandler());
@@ -158,6 +202,50 @@ export class APIRouter {
 		});
 		this.handlers.set("GET:/api/workspaces", () => workspacesHandler());
 
+		// Unlock routes
+		this.handlers.set(
+			"POST:/unlock/pin",
+			withKillSwitch(withUnlockRateLimit((req, url) => unlockPinHandler(req))),
+		);
+		this.handlers.set(
+			"POST:/unlock/webauthn/challenge",
+			withKillSwitch(
+				withUnlockRateLimit((req, url) => webauthnChallengeHandler(req)),
+			),
+		);
+		this.handlers.set(
+			"POST:/unlock/webauthn/finish",
+			withKillSwitch(
+				withUnlockRateLimit((req, url) => webauthnFinishHandler(req)),
+			),
+		);
+
+		// Admin routes
+		this.handlers.set(
+			"POST:/api/admin/kill-switch",
+			requireFreshWebAuthn((req, url) => setKillSwitchHandler(req)),
+		);
+
+		// Decrypting routes that require fresh WebAuthn
+		this.handlers.set(
+			"GET:/export",
+			withKillSwitch(
+				withExportRateLimit(
+					requireFreshWebAuthn((req, url) => exportHandler(req)),
+				),
+			),
+		);
+		this.handlers.set(
+			"POST:/rotate-key",
+			withKillSwitch(requireFreshWebAuthn((req, url) => rotateKeyHandler(req))),
+		);
+
+		// Other decrypting routes
+		this.handlers.set(
+			"GET:/decrypt/:id",
+			withKillSwitch((req, url) => decryptHandler(req)),
+		);
+
 		// Personal mode endpoints
 		const personalModeMonitor = this.personalModeIntegration.getMonitor();
 		if (personalModeMonitor) {
@@ -189,6 +277,15 @@ export class APIRouter {
 			try {
 				return await handler(req, url);
 			} catch (error) {
+				const requestId = req.headers.get("X-Request-ID");
+				const routeName = `${req.method} ${url.pathname}`;
+				const errorId =
+					error instanceof HttpError ? error.errorId : "unknown_error";
+
+				this.context.logger.error(
+					`Error in handler for route: ${routeName}`,
+					{ error, requestId, errorId },
+				);
 				return errorResponse(error);
 			}
 		};
@@ -202,10 +299,12 @@ export class APIRouter {
 		const method = req.method;
 		const key = `${method}:${path}`;
 
+		const withRequestId = createRequestIdMiddleware();
+
 		// Check for exact match
 		const handler = this.handlers.get(key);
 		if (handler) {
-			return await this.wrapHandler(handler)(req, url);
+			return await this.wrapHandler(withRequestId(handler))(req, url);
 		}
 
 		// Check for dynamic account endpoints

@@ -90,6 +90,54 @@ export function ensureSchema(db: Database): void {
 			updated_at INTEGER NOT NULL
 		)
 	`);
+
+	// Create interactions table for encrypted personal mode
+	db.run(`
+		CREATE TABLE IF NOT EXISTS interactions (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			model TEXT,
+			tokens INTEGER,
+			cost_usd REAL,
+			cipher_key_version INTEGER NOT NULL,
+			request_fingerprint TEXT UNIQUE,
+			chunk_count INTEGER,
+			byte_count INTEGER,
+			truncated BOOLEAN
+		)
+	`);
+
+	// Create cipher_blobs table for encrypted content
+	db.run(`
+		CREATE TABLE IF NOT EXISTS cipher_blobs (
+			id TEXT PRIMARY KEY,
+			interaction_id TEXT NOT NULL,
+			chunk_index INTEGER NOT NULL,
+			nonce TEXT NOT NULL,
+			ciphertext BLOB NOT NULL,
+			FOREIGN KEY (interaction_id) REFERENCES interactions(id) ON DELETE CASCADE
+		)
+	`);
+
+	// Create key_store table for encrypted keys
+	db.run(`
+		CREATE TABLE IF NOT EXISTS key_store (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL,
+			blob BLOB NOT NULL,
+			nonce TEXT NOT NULL,
+			meta TEXT
+		)
+	`);
+
+	// Create indexes for faster queries
+	db.run(
+		`CREATE INDEX IF NOT EXISTS idx_interactions_user_id ON interactions(user_id)`,
+	);
+	db.run(
+		`CREATE INDEX IF NOT EXISTS idx_key_store_type ON key_store(type)`,
+	);
 }
 
 export function runMigrations(db: Database): void {
@@ -269,4 +317,45 @@ export function runMigrations(db: Database): void {
 
 	// Add performance indexes
 	addPerformanceIndexes(db);
+
+	const interactionsInfo = db
+		.prepare("PRAGMA table_info(interactions)")
+		.all() as Array<{
+		cid: number;
+		name: string;
+		type: string;
+		notnull: number;
+		dflt_value: any;
+		pk: number;
+	}>;
+
+	const interactionsColumnNames = interactionsInfo.map((col) => col.name);
+
+	if (!interactionsColumnNames.includes("request_fingerprint")) {
+		db.prepare(
+			"ALTER TABLE interactions ADD COLUMN request_fingerprint TEXT UNIQUE",
+		).run();
+		log.info("Added request_fingerprint column to interactions table");
+	}
+
+	if (!interactionsColumnNames.includes("chunk_count")) {
+		db.prepare(
+			"ALTER TABLE interactions ADD COLUMN chunk_count INTEGER",
+		).run();
+		log.info("Added chunk_count column to interactions table");
+	}
+
+	if (!interactionsColumnNames.includes("byte_count")) {
+		db.prepare(
+			"ALTER TABLE interactions ADD COLUMN byte_count INTEGER",
+		).run();
+		log.info("Added byte_count column to interactions table");
+	}
+
+	if (!interactionsColumnNames.includes("truncated")) {
+		db.prepare(
+			"ALTER TABLE interactions ADD COLUMN truncated BOOLEAN",
+		).run();
+		log.info("Added truncated column to interactions table");
+	}
 }

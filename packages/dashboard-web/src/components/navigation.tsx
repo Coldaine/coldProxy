@@ -5,7 +5,9 @@ import {
 	FileText,
 	GitBranch,
 	LayoutDashboard,
+	Lock,
 	Menu,
+	Settings,
 	Shield,
 	Users,
 	X,
@@ -14,6 +16,7 @@ import {
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "../lib/utils";
+import { UnlockDialog } from "./unlock/UnlockDialog";
 import { ThemeToggle } from "./theme-toggle";
 import { Button } from "./ui/button";
 import { Separator } from "./ui/separator";
@@ -32,14 +35,20 @@ const navItems: NavItem[] = [
 	{ label: "Accounts", icon: Users, path: "/accounts" },
 	{ label: "Agents", icon: Bot, path: "/agents" },
 	{ label: "Logs", icon: FileText, path: "/logs" },
+	{ label: "Settings", icon: Settings, path: "/settings" },
 ];
 
 export function Navigation() {
 	const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+	const [isUnlockDialogOpen, setIsUnlockDialogOpen] = useState(false);
 	const location = useLocation();
 
 	return (
 		<>
+			<UnlockDialog
+				open={isUnlockDialogOpen}
+				onOpenChange={setIsUnlockDialogOpen}
+			/>
 			{/* Mobile header */}
 			<div className="lg:hidden fixed top-0 left-0 right-0 z-50 h-16 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b px-4 flex items-center justify-between">
 				<div className="flex items-center gap-3">
@@ -135,6 +144,14 @@ export function Navigation() {
 
 					{/* Footer */}
 					<div className="p-4 space-y-4">
+						<Button
+							variant="outline"
+							className="w-full"
+							onClick={() => setIsUnlockDialogOpen(true)}
+						>
+							<Lock className="mr-2 h-4 w-4" />
+							Unlock Data
+						</Button>
 						<div className="rounded-lg bg-muted/50 p-3">
 							<div className="flex items-center gap-2 text-sm">
 								<Zap className="h-4 w-4 text-primary" />

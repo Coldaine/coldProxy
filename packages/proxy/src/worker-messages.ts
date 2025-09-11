@@ -29,6 +29,12 @@ export interface StartMessage {
 	// Retry info
 	retryAttempt: number;
 	failoverAttempts: number;
+
+	// Encryption fields
+	sk?: ArrayBuffer;
+	keyVersion?: number;
+	keyNonce?: Uint8Array;
+	userId?: string;
 }
 
 export interface ChunkMessage {

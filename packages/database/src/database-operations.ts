@@ -7,6 +7,9 @@ import { ensureSchema, runMigrations } from "./migrations";
 import { resolveDbPath } from "./paths";
 import { AccountRepository } from "./repositories/account.repository";
 import { AgentPreferenceRepository } from "./repositories/agent-preference.repository";
+import { CipherBlobRepository } from "./repositories/cipher-blob.repository";
+import { InteractionRepository } from "./repositories/interaction.repository";
+import { KeyStoreRepository } from "./repositories/key-store.repository";
 import { OAuthRepository } from "./repositories/oauth.repository";
 import {
 	type RequestData,
@@ -34,6 +37,9 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 	private strategy: StrategyRepository;
 	private stats: StatsRepository;
 	private agentPreferences: AgentPreferenceRepository;
+	private keyStore: KeyStoreRepository;
+	private interactions: InteractionRepository;
+	private cipherBlobs: CipherBlobRepository;
 
 	constructor(dbPath?: string) {
 		const resolvedPath = dbPath ?? resolveDbPath();
@@ -59,6 +65,9 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 		this.strategy = new StrategyRepository(this.db);
 		this.stats = new StatsRepository(this.db);
 		this.agentPreferences = new AgentPreferenceRepository(this.db);
+		this.keyStore = new KeyStoreRepository(this.db);
+		this.interactions = new InteractionRepository(this.db);
+		this.cipherBlobs = new CipherBlobRepository(this.db);
 	}
 
 	setRuntimeConfig(runtime: RuntimeConfig): void {
@@ -378,5 +387,17 @@ export class DatabaseOperations implements StrategyStore, Disposable {
 	 */
 	getStatsRepository(): StatsRepository {
 		return this.stats;
+	}
+
+	getKeyStoreRepository(): KeyStoreRepository {
+		return this.keyStore;
+	}
+
+	getInteractionRepository(): InteractionRepository {
+		return this.interactions;
+	}
+
+	getCipherBlobRepository(): CipherBlobRepository {
+		return this.cipherBlobs;
 	}
 }
